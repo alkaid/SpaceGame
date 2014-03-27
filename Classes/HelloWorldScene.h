@@ -2,7 +2,9 @@
 #define __HELLOWORLD_SCENE_H__
 
 #include "cocos2d.h"
+#include "CCParallaxNodeExtra.h"
 
+USING_NS_CC;
 class HelloWorld : public cocos2d::CCLayer
 {
 public:
@@ -12,11 +14,21 @@ public:
     // there's no 'id' in cpp, so we recommend returning the class instance pointer
     static cocos2d::CCScene* scene();
     
-    // a selector callback
-    void menuCloseCallback(CCObject* pSender);
-    
     // implement the "static node()" method manually
     CREATE_FUNC(HelloWorld);
+
+	virtual void update(float dt);
+
+private:
+	CCSprite* _ship;
+	CCSpriteBatchNode* _batchNode;
+	CCParallaxNodeExtra *_backgroundNode;
+	CCSprite* _spacedust1;
+	CCSprite* _spacedust2;
+	CCSprite* _galaxy;
+	CCSprite* _planetsunrise;
+	CCSprite* _spacialanomaly1;
+	CCSprite* _spacialanomaly2;
 };
 
 #endif // __HELLOWORLD_SCENE_H__
