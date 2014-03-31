@@ -17,6 +17,31 @@ CCScene* HelloWorld::scene()
     return scene;
 }
 
+HelloWorld::HelloWorld()
+{
+	_ship=NULL;
+	_batchNode=NULL;
+	_backgroundNode=NULL;
+	_spacedust1=NULL;
+	_spacedust2=NULL;
+	_galaxy=NULL;
+	_planetsunrise=NULL;
+	_spacialanomaly1=NULL;
+	_spacialanomaly2=NULL;
+	_shipPointsPerSecY=0; 
+	_asteroids=NULL;
+	_nextAsteroid=0;
+	_nextAsteroidSpawn=0;
+	_shipLasers=NULL;
+	_nextLaser=0;
+}
+
+HelloWorld::~HelloWorld()
+{
+	CC_SAFE_RELEASE_NULL(_asteroids);
+	CC_SAFE_RELEASE_NULL(_shipLasers);
+}
+
 // on "init" you need to initialize your instance
 bool HelloWorld::init()
 {
@@ -51,6 +76,33 @@ bool HelloWorld::init()
 	   this->addChild(CCParticleSystemQuad::create("Particles/Stars1.plist"));
 	   this->addChild(CCParticleSystemQuad::create("Particles/Stars2.plist"));
 	   this->addChild(CCParticleSystemQuad::create("Particles/Stars3.plist"));
+	   //添加陨石
+	   #define KNUMASTEROIDS 15 
+	   _asteroids=CCArray::createWithCapacity(KNUMASTEROIDS);
+	   _asteroids->retain();
+	   for (int i=0;i<KNUMASTEROIDS;i++)
+	   {
+		   CCSprite *asteroid=CCSprite::createWithSpriteFrameName("asteroid.png");
+		   asteroid->setVisible(false);
+		   _batchNode->addChild(asteroid);
+		   _asteroids->addObject(asteroid);
+	   }
+	   srand(static_cast<unsigned int> (getTimeTick()));
+	   //添加激光
+#define KNUMLASERS 5
+	   _shipLasers=CCArray::createWithCapacity(KNUMASTEROIDS);
+	   _shipLasers->retain();
+	   for (int i=0;i<KNUMLASERS;i++)
+	   {
+		   CCSprite* laser=CCSprite::createWithSpriteFrameName("laserbeam_blue.png");
+		   laser->setVisible(false);
+		   _batchNode->addChild(laser);
+		   _shipLasers->addObject(laser);
+	   }
+
+	   this->setTouchEnabled(true);
+	   CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(this,0,true);
+	   this->setAccelerometerEnabled(true);
 
 	   /*
 	   //下面这段代码是为了理解convertToWorldSpace而做的测试
@@ -138,6 +190,129 @@ void HelloWorld::update( float dt )
 			_backgroundNode->increamentOffset(ccp(2000,0),b);
 		}
 	}
+	//TODO 以下重力感应控制飞船的方法 暂不理解
+	CCSize winSize = CCDirector::sharedDirector()->getWinSize(); 
+
+	float maxY = winSize.height - _ship->getContentSize().height/2; 
+
+	float minY = _ship->getContentSize().height/2; 
+
+	float diff = (_shipPointsPerSecY * dt) ; 
+
+	float newY = _ship->getPosition().y + diff; 
+
+	newY = MIN(MAX(newY, minY), maxY); 
+
+	_ship->setPosition(ccp(_ship->getPosition().x, newY)); 
+
+	//更新陨石
+	float curTimeMillis=(float)getTimeTick();
+	if(curTimeMillis>_nextAsteroidSpawn){
+		float randMillis=randomValueBetween(0.2,1.0)*1000;
+		_nextAsteroidSpawn=curTimeMillis+randMillis;
+		float randY=randomValueBetween(0.0,winSize.height);
+		float randDuration=randomValueBetween(2.0,10.0);
+		CCSprite* asteroid=(CCSprite*)_asteroids->objectAtIndex(_nextAsteroid);
+		_nextAsteroid++;
+		if(_nextAsteroid>=_asteroids->count()){
+			_nextAsteroid=0;
+		}
+		asteroid->stopAllActions();
+		asteroid->setPosition(ccp(winSize.width+asteroid->getContentSize().width/2,randY));
+		asteroid->setVisible(true);
+		asteroid->runAction(CCSequence::create(CCMoveBy::create(randDuration,ccp(-winSize.width-asteroid->getContentSize().width,0)),CCCallFuncN::create(this,callfuncN_selector(HelloWorld::setInvasible)),NULL));
+	}
 	
-	
+	//碰撞检测
+	CCObject* asteroidObj=NULL;
+	CCObject* laserObj=NULL;
+	CCARRAY_FOREACH(_asteroids,asteroidObj){
+		CCSprite* asteroid=(CCSprite*)asteroidObj;
+		if(!asteroid->isVisible()){
+			continue;
+		}
+		CCARRAY_FOREACH(_shipLasers,laserObj){
+			CCSprite* laser=(CCSprite*)laserObj;
+			if(!laser->isVisible()){
+				continue;
+			}
+			if(laser->boundingBox().intersectsRect(asteroid->boundingBox())){
+				laser->setVisible(false);
+				asteroid->setVisible(false);
+				break;
+			}
+		}
+
+		if(_ship->boundingBox().intersectsRect(asteroid->boundingBox())){
+			_ship->runAction(CCBlink::create(1.0,9));
+			asteroid->setVisible(false);
+		}
+	}
 }
+
+void HelloWorld::didAccelerate( CCAcceleration* pAccelerationValue )
+{
+	//TODO 以下重力感应控制飞船的方法 暂不理解
+#define KFILTERINGFACTOR 0.1 
+
+#define KRESTACCELX -0.6 
+
+#define KSHIPMAXPOINTSPERSEC (winSize.height*0.5) 
+
+#define KMAXDIFFX 0.2 
+
+	double rollingX ; 
+
+	// Cocos2DX inverts X and Y accelerometer depending on device orientation 
+
+	// in landscape mode right x=-y and y=x !!! (Strange and confusing choice) 
+
+	pAccelerationValue->x = pAccelerationValue->y ; 
+
+	rollingX = (pAccelerationValue->x * KFILTERINGFACTOR) + (rollingX * (1.0 - KFILTERINGFACTOR)); 
+
+	float accelX = pAccelerationValue->x - rollingX ; 
+
+	CCSize winSize = CCDirector::sharedDirector()->getWinSize(); 
+
+	float accelDiff = accelX - KRESTACCELX; 
+
+	float accelFraction = accelDiff / KMAXDIFFX; 
+
+	_shipPointsPerSecY = KSHIPMAXPOINTSPERSEC * accelFraction; 
+}
+
+float HelloWorld::randomValueBetween( float low,float high )
+{
+	//srand(static_cast<unsigned int> (getTimeTick()));	//应该放到init()里去
+	//return rand()%(high-low+1)+low;
+	//CCLog(CCString::createWithFormat("rand()=%i,rand()/RandMax=%f,rand()/RANDMAX/range=%f",rand(),(double)rand()/(double)RAND_MAX,(double)rand()/(double)RAND_MAX/(high-low))->getCString());
+	return low+ (double)rand()/(double)RAND_MAX*(high-low);
+}
+
+void HelloWorld::setInvasible( CCNode* node )
+{
+	node->setVisible(false);
+}
+
+unsigned long HelloWorld::getTimeTick()
+{
+	timeval time;
+	gettimeofday(&time,NULL);
+	unsigned long millisecs=time.tv_sec*1000+time.tv_usec/1000;
+	return millisecs;
+}
+
+bool HelloWorld::ccTouchBegan( CCTouch *pTouch, CCEvent *pEvent )
+{
+	CCSize winSize=CCDirector::sharedDirector()->getWinSize();
+	CCSprite* laser=(CCSprite*)_shipLasers->objectAtIndex(_nextLaser++);
+	_nextLaser=_nextLaser>=_shipLasers->count()?0:_nextLaser;
+	laser->setPosition(ccpAdd(_ship->getPosition(),ccp(laser->getContentSize().width/2,0)));
+	laser->setVisible(true);
+	laser->stopAllActions();
+	laser->runAction(CCSequence::create(CCMoveBy::create(0.5,ccp(winSize.width,0)),CCCallFuncN::create(this,callfuncN_selector(HelloWorld::setInvasible)),NULL));
+	return true;
+}
+
+
